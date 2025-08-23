@@ -14,7 +14,7 @@ DB_CONFIG = {
     'port': 3306,
     'database': 'pystudent',
     'user': 'root',
-    'password': ''  # Default XAMPP MySQL password is empty
+    'password': '' 
 }
 
 def get_db_connection():
@@ -125,17 +125,23 @@ def admin_panel():
 
 @app.route('/api/students/<int:student_id>/suspend', methods=['PUT'])
 def suspend_student(student_id):
-    """Suspend a student"""
+    """Suspend a student with reason"""
     try:
+        data = request.get_json()
+        reason = data.get('reason', '') if data else ''
+        
+        if not reason or reason.strip() == '':
+            return jsonify({'error': 'Suspension reason is required'}), 400
+        
         connection = get_db_connection()
         if connection is None:
             return jsonify({'error': 'Database connection failed'}), 500
         
         cursor = connection.cursor(dictionary=True)
         
-        # Update student suspension status
-        query = "UPDATE students SET isSuspended = TRUE WHERE id = %s"
-        cursor.execute(query, (student_id,))
+        # Update student suspension status and reason
+        query = "UPDATE students SET isSuspended = TRUE, reason = %s WHERE id = %s"
+        cursor.execute(query, (reason.strip(), student_id))
         
         if cursor.rowcount == 0:
             cursor.close()
@@ -158,7 +164,7 @@ def suspend_student(student_id):
 
 @app.route('/api/students/<int:student_id>/unsuspend', methods=['PUT'])
 def unsuspend_student(student_id):
-    """Unsuspend a student"""
+    """Unsuspend a student and clear reason"""
     try:
         connection = get_db_connection()
         if connection is None:
@@ -166,8 +172,8 @@ def unsuspend_student(student_id):
         
         cursor = connection.cursor(dictionary=True)
         
-        # Update student suspension status
-        query = "UPDATE students SET isSuspended = FALSE WHERE id = %s"
+        # Update student suspension status and clear reason
+        query = "UPDATE students SET isSuspended = FALSE, reason = NULL WHERE id = %s"
         cursor.execute(query, (student_id,))
         
         if cursor.rowcount == 0:

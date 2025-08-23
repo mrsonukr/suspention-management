@@ -61,6 +61,10 @@
             background: linear-gradient(135deg, #1e90ff 0%, #2ed573 100%);
             color: white;
         }
+        .reason-cell {
+            max-width: 150px;
+            text-align: center;
+        }
         .toast-container {
             position: fixed;
             top: 20px;
@@ -188,6 +192,7 @@
                         <th>Section</th>
                         <th>Batch</th>
                         <th>Status</th>
+                        <th>Reason</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -195,6 +200,81 @@
                     <!-- Students will be loaded here -->
                 </tbody>
             </table>
+        </div>
+
+        <!-- Suspension Reason Modal -->
+        <div class="modal fade" id="suspensionModal" tabindex="-1" aria-labelledby="suspensionModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="suspensionModalLabel">
+                            <i class="fas fa-user-slash me-2"></i>
+                            Suspend Student
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="studentName" class="form-label">Student Name:</label>
+                            <input type="text" class="form-control" id="studentName" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="studentRoll" class="form-label">Roll Number:</label>
+                            <input type="text" class="form-control" id="studentRoll" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="suspensionReason" class="form-label">
+                                <span class="text-danger">*</span> Suspension Reason:
+                            </label>
+                            <textarea class="form-control" id="suspensionReason" rows="4" 
+                                placeholder="Please provide a detailed reason for suspending this student..." required></textarea>
+                            <div class="form-text text-danger" id="reasonError" style="display: none;">
+                                Suspension reason is required
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <i class="fas fa-times me-2"></i>Cancel
+                        </button>
+                        <button type="button" class="btn btn-danger" id="confirmSuspendBtn">
+                            <i class="fas fa-user-slash me-2"></i>Confirm Suspension
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reason Details Modal -->
+        <div class="modal fade" id="reasonDetailsModal" tabindex="-1" aria-labelledby="reasonDetailsModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="reasonDetailsModalLabel">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Suspension Reason Details
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Student Name:</label>
+                            <p id="reasonStudentName" class="form-control-plaintext"></p>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Suspension Reason:</label>
+                            <div class="border rounded p-3 bg-light" id="reasonDetails">
+                                <!-- Reason details will be displayed here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <i class="fas fa-times me-2"></i>Close
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Pagination -->
@@ -223,6 +303,9 @@
         let currentPage = 1;
         const studentsPerPage = 50;
         let suspendedChart = null;
+        let currentStudentId = null;
+        let suspensionModal = null;
+        let reasonDetailsModal = null;
 
         // API Base URL
         const API_BASE = 'http://localhost:5000/api';
@@ -232,12 +315,27 @@
             loadStudents();
             setupEventListeners();
             initializeChart();
+            initializeModal();
         });
 
         function setupEventListeners() {
             document.getElementById('searchInput').addEventListener('input', debounce(filterStudents, 300));
             document.getElementById('sectionFilter').addEventListener('change', filterStudents);
             document.getElementById('statusFilter').addEventListener('change', filterStudents);
+            
+            // Setup modal event listeners
+            document.getElementById('confirmSuspendBtn').addEventListener('click', confirmSuspension);
+            document.getElementById('suspensionReason').addEventListener('input', hideReasonError);
+            
+            // Setup event delegation for view reason buttons
+            document.addEventListener('click', function(e) {
+                if (e.target.closest('.view-reason-btn')) {
+                    const button = e.target.closest('.view-reason-btn');
+                    const studentName = button.getAttribute('data-student-name');
+                    const reason = button.getAttribute('data-reason');
+                    showReasonDetails(studentName, reason);
+                }
+            });
         }
 
         async function loadStudents() {
@@ -314,12 +412,20 @@
                             ${student.isSuspended ? 'Suspended' : 'Active'}
                         </span>
                     </td>
+                    <td class="reason-cell">
+                        ${student.isSuspended && student.reason ? 
+                            `<button class="btn btn-outline-info btn-sm view-reason-btn" data-student-name="${student.name.replace(/"/g, '&quot;')}" data-reason="${student.reason.replace(/"/g, '&quot;')}">
+                                <i class="fas fa-eye me-1"></i>View Reason
+                            </button>` : 
+                            '<span class="text-muted">-</span>'
+                        }
+                    </td>
                     <td>
                         ${student.isSuspended ? 
                             `<button class="btn btn-unsuspend btn-sm" onclick="unsuspendStudent(${student.id})">
                                 <i class="fas fa-user-check me-1"></i>Unsuspend
                             </button>` :
-                            `<button class="btn btn-suspend btn-sm" onclick="suspendStudent(${student.id})">
+                            `<button class="btn btn-suspend btn-sm" onclick="showSuspensionModal(${student.id}, '${student.name}', '${student.rollNumber}')">
                                 <i class="fas fa-user-slash me-1"></i>Suspend
                             </button>`
                         }
@@ -330,17 +436,14 @@
             updatePagination();
         }
 
-        async function suspendStudent(studentId) {
-            if (!confirm('Are you sure you want to suspend this student?')) {
-                return;
-            }
-
+        async function suspendStudent(studentId, reason) {
             try {
                 const response = await fetch(`${API_BASE}/students/${studentId}/suspend`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({ reason: reason })
                 });
 
                 const data = await response.json();
@@ -358,7 +461,16 @@
         }
 
         async function unsuspendStudent(studentId) {
-            if (!confirm('Are you sure you want to unsuspend this student?')) {
+            // Find the student to get their reason
+            const student = allStudents.find(s => s.id === studentId);
+            if (!student) return;
+            
+            let confirmMessage = 'Are you sure you want to unsuspend this student?';
+            if (student.reason) {
+                confirmMessage += `\n\nCurrent suspension reason: ${student.reason}`;
+            }
+            
+            if (!confirm(confirmMessage)) {
                 return;
             }
 
@@ -472,6 +584,63 @@
                     toast.remove();
                 }
             }, 3000);
+        }
+
+        function initializeModal() {
+            console.log('Initializing modals...');
+            try {
+                suspensionModal = new bootstrap.Modal(document.getElementById('suspensionModal'));
+                reasonDetailsModal = new bootstrap.Modal(document.getElementById('reasonDetailsModal'));
+                console.log('Modals initialized successfully:', { suspensionModal, reasonDetailsModal });
+            } catch (error) {
+                console.error('Error initializing modals:', error);
+            }
+        }
+
+        function showSuspensionModal(studentId, studentName, studentRoll) {
+            currentStudentId = studentId;
+            document.getElementById('studentName').value = studentName;
+            document.getElementById('studentRoll').value = studentRoll;
+            document.getElementById('suspensionReason').value = '';
+            document.getElementById('reasonError').style.display = 'none';
+            suspensionModal.show();
+        }
+
+        function hideReasonError() {
+            document.getElementById('reasonError').style.display = 'none';
+        }
+
+        function confirmSuspension() {
+            const reason = document.getElementById('suspensionReason').value.trim();
+            
+            if (!reason) {
+                document.getElementById('reasonError').style.display = 'block';
+                return;
+            }
+            
+            if (currentStudentId) {
+                suspensionModal.hide();
+                suspendStudent(currentStudentId, reason);
+            }
+        }
+
+        function showReasonDetails(studentName, reason) {
+            console.log('showReasonDetails called with:', studentName, reason);
+            console.log('reasonDetailsModal:', reasonDetailsModal);
+            
+            if (!reasonDetailsModal) {
+                console.error('Modal not initialized!');
+                return;
+            }
+            
+            try {
+                document.getElementById('reasonStudentName').textContent = studentName;
+                document.getElementById('reasonDetails').textContent = reason;
+                reasonDetailsModal.show();
+                console.log('Modal should be showing now');
+            } catch (error) {
+                console.error('Error showing modal:', error);
+            }
         }
 
         function debounce(func, wait) {
